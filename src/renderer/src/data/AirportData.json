@@ -1,0 +1,429 @@
+{
+  "airports": [
+    {
+      "code": "UIIA",
+      "name": "UUIIAA International Cat Airport",
+      "altitude": 69
+    },
+    {
+      "code": "WAAA",
+      "name": "Sultan Hasanuddin International Airport",
+      "altitude": 47
+    },
+    {
+      "code": "WAAB",
+      "name": "Betoambari Airport",
+      "altitude": 164
+    },
+    {
+      "code": "WAAJ",
+      "name": "Tampa Padang Airport",
+      "altitude": 17
+    },
+    {
+      "code": "WAAM",
+      "name": "Andi Jemma Airport",
+      "altitude": 16
+    },
+    {
+      "code": "WAAS",
+      "name": "Soroako Airport",
+      "altitude": 1565
+    },
+    {
+      "code": "WAAU",
+      "name": "Haluoleo International Airport",
+      "altitude": 157
+    },
+    {
+      "code": "WABB",
+      "name": "Frans Kaisiepo Airport",
+      "altitude": 16
+    },
+    {
+      "code": "WABD",
+      "name": "Moanamani Airport",
+      "altitude": 5600
+    },
+    {
+      "code": "WABF",
+      "name": "Jembruwo Airport",
+      "altitude": 3550
+    },
+    {
+      "code": "WABG",
+      "name": "Waghete Airport",
+      "altitude": 5689
+    },
+    {
+      "code": "WABI",
+      "name": "Douw Aturure Nabire Airport",
+      "altitude": 20
+    },
+    {
+      "code": "WABL",
+      "name": "Ilaga Airport",
+      "altitude": 7746
+    },
+    {
+      "code": "WABT",
+      "name": "Enarotali Airport",
+      "altitude": 5960
+    },
+    {
+      "code": "WADA",
+      "name": "Selaparang Airport",
+      "altitude": 52
+    },
+    {
+      "code": "WADB",
+      "name": "Sultan Muhammad Salahuddin Airport",
+      "altitude": 3
+    },
+    {
+      "code": "WADD",
+      "name": "Ngurah Rai International Airport",
+      "altitude": 14
+    },
+    {
+      "code": "WADL",
+      "name": "Lombok International Airport",
+      "altitude": 319
+    },
+    {
+      "code": "WADS",
+      "name": "Sultan Muhammad Kaharuddin III Airport",
+      "altitude": 75
+    },
+    {
+      "code": "WADT",
+      "name": "Lede Kalumbang Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WADY",
+      "name": "Sultan Bantilan Airport",
+      "altitude": 5
+    },
+    {
+      "code": "WAGI",
+      "name": "Iskandar Airport",
+      "altitude": 8
+    },
+    {
+      "code": "WAHS",
+      "name": "Adisutjipto International Airport",
+      "altitude": 350
+    },
+    {
+      "code": "WALL",
+      "name": "Juwata International Airport",
+      "altitude": 23
+    },
+    {
+      "code": "WAMM",
+      "name": "Sam Ratulangi International Airport",
+      "altitude": 81
+    },
+    {
+      "code": "WAOK",
+      "name": "Gusti Syamsir Alam Airport",
+      "altitude": 20
+    },
+    {
+      "code": "WAON",
+      "name": "Warukin Airport",
+      "altitude": 197
+    },
+    {
+      "code": "WAOO",
+      "name": "Syamsudin Noor International Airport",
+      "altitude": 66
+    },
+    {
+      "code": "WAPA",
+      "name": "Amahai Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WAPD",
+      "name": "Rar Gwamar Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WAPE",
+      "name": "Mangole Airport",
+      "altitude": 49
+    },
+    {
+      "code": "WAPF",
+      "name": "Karel Sadsuitubun Airport",
+      "altitude": 24
+    },
+    {
+      "code": "WAPG",
+      "name": "Namrole Airport",
+      "altitude": 7
+    },
+    {
+      "code": "WAPL",
+      "name": "Dumatubin Airport",
+      "altitude": 14
+    },
+    {
+      "code": "WAPN",
+      "name": "Sanana Airport",
+      "altitude": 235
+    },
+    {
+      "code": "WAPP",
+      "name": "Pattimura International Airport",
+      "altitude": 33
+    },
+    {
+      "code": "WAPR",
+      "name": "Namniwel Airport",
+      "altitude": 36
+    },
+    {
+      "code": "WARR",
+      "name": "Juanda International Airport",
+      "altitude": 3
+    },
+    {
+      "code": "WASF",
+      "name": "Domine Eduard Osok Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WIAA",
+      "name": "Maimun Saleh Airport",
+      "altitude": 91
+    },
+    {
+      "code": "WIBB",
+      "name": "Sultan Syarif Kasim II International Airport",
+      "altitude": 102
+    },
+    {
+      "code": "WIBD",
+      "name": "Pinang Kampai Airport",
+      "altitude": 23
+    },
+    {
+      "code": "WIBJ",
+      "name": "Japura Airport",
+      "altitude": 13
+    },
+    {
+      "code": "WIBR",
+      "name": "Rokot Airport",
+      "altitude": 3
+    },
+    {
+      "code": "WICA",
+      "name": "Kertajati International Airport",
+      "altitude": 120
+    },
+    {
+      "code": "WICB",
+      "name": "Budiarto Airport",
+      "altitude": 151
+    },
+    {
+      "code": "WICC",
+      "name": "Husein Sastranegara International Airport",
+      "altitude": 2436
+    },
+    {
+      "code": "WICD",
+      "name": "Cakrabhuwana Airport",
+      "altitude": 89
+    },
+    {
+      "code": "WICM",
+      "name": "Wiriadinata Airport",
+      "altitude": 115
+    },
+    {
+      "code": "WICN",
+      "name": "Nusawiru Airport",
+      "altitude": 30
+    },
+    {
+      "code": "WIDD",
+      "name": "Hang Nadim International Airport",
+      "altitude": 126
+    },
+    {
+      "code": "WIDM",
+      "name": "Matak Airport",
+      "altitude": 37
+    },
+    {
+      "code": "WIDN",
+      "name": "Raja Haji Fisabilillah International Airport",
+      "altitude": 15
+    },
+    {
+      "code": "WIDO",
+      "name": "Ranai-Natuna Airport",
+      "altitude": 8
+    },
+    {
+      "code": "WIDS",
+      "name": "Dabo Airport",
+      "altitude": 28
+    },
+    {
+      "code": "WIEE",
+      "name": "Minangkabau International Airport",
+      "altitude": 18
+    },
+    {
+      "code": "WIGG",
+      "name": "Fatmawati Soekarno Airport",
+      "altitude": 50
+    },
+    {
+      "code": "WIHH",
+      "name": "Halim Perdanakusuma International Airport",
+      "altitude": 85
+    },
+    {
+      "code": "WIII",
+      "name": "Soekarno-Hatta International Airport",
+      "altitude": 32
+    },
+    {
+      "code": "WIIT",
+      "name": "Radin Inten II Airport",
+      "altitude": 282
+    },
+    {
+      "code": "WIJB",
+      "name": "Muara Bungo Airport",
+      "altitude": 104
+    },
+    {
+      "code": "WIJJ",
+      "name": "Sultan Thaha Syaifuddin Airport",
+      "altitude": 82
+    },
+    {
+      "code": "WIKL",
+      "name": "Silampari Airport",
+      "altitude": 174
+    },
+    {
+      "code": "WIKT",
+      "name": "H.A.S. Hanandjoeddin International Airport",
+      "altitude": 164
+    },
+    {
+      "code": "WIMB",
+      "name": "Binaka Airport",
+      "altitude": 22
+    },
+    {
+      "code": "WIME",
+      "name": "Aek Godang Airport",
+      "altitude": 1315
+    },
+    {
+      "code": "WIMG",
+      "name": "Sutan Sjahrir Air Force Base",
+      "altitude": 3
+    },
+    {
+      "code": "WIMK",
+      "name": "Soewondo Air Force Base",
+      "altitude": 30
+    },
+    {
+      "code": "WIMM",
+      "name": "Kualanamu International Airport",
+      "altitude": 23
+    },
+    {
+      "code": "WIOG",
+      "name": "Nanga Pinoh Airport",
+      "altitude": 123
+    },
+    {
+      "code": "WIOK",
+      "name": "Rahadi Osman Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WIOO",
+      "name": "Supadio International Airport",
+      "altitude": 10
+    },
+    {
+      "code": "WIOP",
+      "name": "Pangsuma Airport",
+      "altitude": 1125
+    },
+    {
+      "code": "WIOS",
+      "name": "Tebelian Airport",
+      "altitude": 82
+    },
+    {
+      "code": "WIPK",
+      "name": "Depati Amir Airport",
+      "altitude": 108
+    },
+    {
+      "code": "WIPP",
+      "name": "Sultan Mahmud Badaruddin II International Airport",
+      "altitude": 49
+    },
+    {
+      "code": "WIPQ",
+      "name": "Pendopo Airport",
+      "altitude": 144
+    },
+    {
+      "code": "WIPU",
+      "name": "Mukomuko Airport",
+      "altitude": 25
+    },
+    {
+      "code": "WIPV",
+      "name": "Keluang Airport",
+      "altitude": 42
+    },
+    {
+      "code": "WITA",
+      "name": "Teuku Cut Ali Airport",
+      "altitude": 105
+    },
+    {
+      "code": "WITC",
+      "name": "Cut Nyak Dhien Airport",
+      "altitude": 82
+    },
+    {
+      "code": "WITG",
+      "name": "Lasikin Airport",
+      "altitude": 24
+    },
+    {
+      "code": "WITL",
+      "name": "Lhok Sukon Airport",
+      "altitude": 28
+    },
+    {
+      "code": "WITT",
+      "name": "Sultan Iskandar Muda International Airport",
+      "altitude": 65
+    },
+    {
+      "code": "WITW",
+      "name": "Malikul Saleh Airport",
+      "altitude": 30
+    }
+  ]
+}
