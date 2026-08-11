@@ -1,9 +1,13 @@
-import React, { useRef, useState, useEffect, forwardRef, useImperativeHandle } from 'react'
+import React, { useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 
 type GeoPoint = { id: string; coord: { lat: number; lon: number }; type?: 'FIX' | 'VOR' | 'NDB'; freq?: string }
+type Coord = { lat: number; lon: number }
+type ShapePath = { coords: Coord[]; label?: string; color?: string }
+type SectionShape = { name: string; kind: 'point' | 'polyline' | 'polygon' | 'label'; paths: ShapePath[] }
 
 type Props = {
   geoPoints?: GeoPoint[]
+  shapes?: SectionShape[]
   onGeoChange?: (pts: GeoPoint[]) => void
   selectedId?: string | null
   onSelect?: (id: string | null) => void
@@ -13,14 +17,69 @@ export type CanvasHandle = { fitToExtent: () => void; resetView: () => void }
 
 const Margin = 20
 
+function sameCoord(a: Coord, b: Coord, tolerance = 1e-10) {
+  return (
+    Math.abs(a.lat - b.lat) < tolerance &&
+    Math.abs(a.lon - b.lon) < tolerance
+  )
+}
+
+function mergePolygonPaths(paths: ShapePath[]): ShapePath[] {
+  if (paths.length === 0) return []
+
+  const result: ShapePath[] = []
+
+  // Start with the first path
+  let coords: Coord[] = [...paths[0].coords]
+
+  for (let i = 1; i < paths.length; i++) {
+    const next = paths[i].coords
+
+    if (next.length === 0) continue
+
+    const last = coords[coords.length - 1]
+    const first = next[0]
+
+    // The next segment starts where the previous one ended
+    if (sameCoord(last, first)) {
+      coords.push(...next.slice(1))
+    } else {
+      // Disconnected segment
+      result.push({
+        ...paths[i - 1],
+        coords,
+      })
+
+      coords = [...next]
+    }
+  }
+
+  result.push({
+    ...paths[paths.length - 1],
+    coords,
+  })
+
+  // Close the polygon
+  for (const path of result) {
+    if (
+      path.coords.length >= 3 &&
+      !sameCoord(path.coords[0], path.coords[path.coords.length - 1])
+    ) {
+      path.coords.push(path.coords[0])
+    }
+  }
+
+  return result
+}
+
 function SectorCanvasInner(
-  { geoPoints = [], onGeoChange, selectedId = null, onSelect }: Props,
+  { geoPoints = [], shapes = [], onGeoChange, selectedId = null, onSelect }: Props,
   ref: React.Ref<CanvasHandle>
 ): React.JSX.Element {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [size, setSize] = useState({ w: 800, h: 600 })
-
+  
   useEffect(() => {
     function onUp() {
       setDragging(null)
@@ -28,7 +87,7 @@ function SectorCanvasInner(
     window.addEventListener('mouseup', onUp)
     return () => window.removeEventListener('mouseup', onUp)
   }, [])
-
+  
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
@@ -39,13 +98,23 @@ function SectorCanvasInner(
     obs.observe(el)
     return () => obs.disconnect()
   }, [])
-
+  
   // simple pan state (translate)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isPanning, setIsPanning] = useState(false)
   const panStartRef = useRef<{ x: number; y: number } | null>(null)
   const [scale, setScale] = useState(1)
+  const scaleRef = useRef(scale)
+  const panRef = useRef(pan)
 
+  useEffect(() => {
+    scaleRef.current = scale
+  }, [scale])
+
+  useEffect(() => {
+    panRef.current = pan
+  }, [pan])
+  
   function onBackgroundMouseDown(e: React.MouseEvent) {
     // start panning with middle button or ctrl+left
     if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
@@ -69,25 +138,25 @@ function SectorCanvasInner(
     setPan({ x: nx, y: ny })
   }
 
-  function onWheel(e: React.WheelEvent) {
-    e.preventDefault()
-    const el = svgRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    const cx = e.clientX - rect.left
-    const cy = e.clientY - rect.top
-    const delta = -e.deltaY
-    const step = e.ctrlKey ? 0.0015 : 0.0035
-    const oldScale = scale
-    const factor = Math.exp(delta * step)
-    const target = Math.max(0.2, Math.min(8, oldScale * factor))
-    const pX = (cx - pan.x) / oldScale
-    const pY = (cy - pan.y) / oldScale
-    const newPanX = cx - pX * target
-    const newPanY = cy - pY * target
-    setScale(target)
-    setPan({ x: newPanX, y: newPanY })
-  }
+  // function onWheel(e: React.WheelEvent) {
+  //   e.preventDefault()
+  //   const el = svgRef.current
+  //   if (!el) return
+  //   const rect = el.getBoundingClientRect()
+  //   const cx = e.clientX - rect.left
+  //   const cy = e.clientY - rect.top
+  //   const delta = -e.deltaY
+  //   const step = e.ctrlKey ? 0.0015 : 0.0035
+  //   const oldScale = scale
+  //   const factor = Math.exp(delta * step)
+  //   const target = Math.max(0.2, Math.min(8, oldScale * factor))
+  //   const pX = (cx - pan.x) / oldScale
+  //   const pY = (cy - pan.y) / oldScale
+  //   const newPanX = cx - pX * target
+  //   const newPanY = cy - pY * target
+  //   setScale(target)
+  //   setPan({ x: newPanX, y: newPanY })
+  // }
 
   // animate zoom with easing
   function animateZoom(fromScale: number, toScale: number, fromPan: { x: number; y: number }, toPan: { x: number; y: number }) {
@@ -106,21 +175,82 @@ function SectorCanvasInner(
     requestAnimationFrame(step)
   }
 
-  // compute bounding box of coordinates
-  const lats = geoPoints.map(p => p.coord.lat)
-  const lons = geoPoints.map(p => p.coord.lon)
-  const latMin = Math.min(...(lats.length ? lats : [0]))
-  const latMax = Math.max(...(lats.length ? lats : [1]))
-  const lonMin = Math.min(...(lons.length ? lons : [0]))
-  const lonMax = Math.max(...(lons.length ? lons : [1]))
+  // compute bounding box of coordinates from points and shapes
+  const allCoords: Coord[] = []
+
+  for (const p of geoPoints) {
+    allCoords.push(p.coord)
+  }
+
+  for (const shape of shapes) {
+    for (const path of shape.paths) {
+      for (const coord of path.coords) {
+        allCoords.push(coord)
+      }
+    }
+  }
+
+  const {
+    latMin,
+    latMax,
+    lonMin,
+    lonMax,
+  } = getBounds(allCoords)
+
+  const projectedShapes = useMemo(() => {
+    return shapes.map(shape => ({
+      ...shape,
+      paths: shape.paths.map(path => ({
+        ...path,
+        screenCoords: path.coords.map(c =>
+          project(c.lat, c.lon)
+        ),
+      })),
+    }))
+  }, [
+    shapes,
+    size,
+    latMin,
+    latMax,
+    lonMin,
+    lonMax,
+  ])
 
   function project(lat: number, lon: number) {
     const w = size.w - Margin * 2
     const h = size.h - Margin * 2
-    const xBase = Margin + ((lon - lonMin) / (lonMax - lonMin || 1)) * w
-    // y: invert lat so larger lat is top
-    const yBase = Margin + (1 - (lat - latMin) / (latMax - latMin || 1)) * h
-    return { x: xBase, y: yBase }
+
+    const latCenter = (latMin + latMax) / 2
+
+    const lonScale = Math.cos(latCenter * Math.PI / 180)
+
+    const xGeo =
+      (lon - lonMin) * lonScale
+
+    const yGeo =
+      latMax - lat
+
+    const geoWidth =
+      (lonMax - lonMin) * lonScale
+
+    const geoHeight =
+      latMax - latMin
+
+    const scaleX = w / (geoWidth || 1)
+    const scaleY = h / (geoHeight || 1)
+
+    const s = Math.min(scaleX, scaleY)
+
+    const usedWidth = geoWidth * s
+    const usedHeight = geoHeight * s
+
+    const offsetX = Margin + (w - usedWidth) / 2
+    const offsetY = Margin + (h - usedHeight) / 2
+
+    return {
+      x: offsetX + xGeo * s,
+      y: offsetY + yGeo * s,
+    }
   }
 
   function unproject(x: number, y: number) {
@@ -153,40 +283,53 @@ function SectorCanvasInner(
     const next = geoPoints.map(p => (p.id === dragging ? { ...p, coord: { lat, lon } } : p))
     onGeoChange?.(next)
   }
+  
   useImperativeHandle(ref, () => ({
     fitToExtent: () => {
-      // compute bbox in base coords and set scale/pan to fit
       if (!svgRef.current) return
+        
       const el = svgRef.current
       const r = el.getBoundingClientRect()
+        
       const viewW = Math.max(100, r.width)
       const viewH = Math.max(100, r.height)
-      if (geoPoints.length === 0) {
-        setScale(1)
-        setPan({ x: 0, y: 0 })
+        
+      const points = [
+        ...geoPoints.map(p => p.coord),
+        ...shapes.flatMap(shape =>
+          shape.paths.flatMap(path => path.coords)
+        ),
+      ]
+    
+      if (points.length === 0) {
+        animateZoom(
+          scale,
+          1,
+          pan,
+          { x: 0, y: 0 }
+        )
         return
       }
-      const lats = geoPoints.map(p => p.coord.lat)
-      const lons = geoPoints.map(p => p.coord.lon)
-      const latMin = Math.min(...lats)
-      const latMax = Math.max(...lats)
-      const lonMin = Math.min(...lons)
-      const lonMax = Math.max(...lons)
-      const wBase = viewW - Margin * 2
-      const hBase = viewH - Margin * 2
-      const scaleX = wBase / (Math.max(1e-6, lonMax - lonMin))
-      const scaleY = hBase / (Math.max(1e-6, latMax - latMin))
-      const targetScale = Math.max(0.2, Math.min(8, Math.min(scaleX, scaleY)))
-      // compute center in base coords
-      const centerLon = (lonMin + lonMax) / 2
-      const centerLat = (latMin + latMax) / 2
-      const centerBase = project(centerLat, centerLon)
-      const cx = viewW / 2
-      const cy = viewH / 2
-      const newPanX = cx - centerBase.x * targetScale
-      const newPanY = cy - centerBase.y * targetScale
-      // animate
-      animateZoom(scale, targetScale, pan, { x: newPanX, y: newPanY })
+    
+      // project() already fits the geographic extent into the canvas.
+      // Therefore the correct base scale is simply 1.
+      //
+      // Add a little margin if desired.
+      const targetScale = 1
+    
+      // Since project() already puts the data inside the canvas,
+      // no additional centering calculation is necessary.
+      const targetPan = {
+        x: 0,
+        y: 0,
+      }
+    
+      animateZoom(
+        scale,
+        targetScale,
+        pan,
+        targetPan
+      )
     }
     ,
     resetView: () => {
@@ -195,43 +338,224 @@ function SectorCanvasInner(
     }
   }))
 
+  useEffect(() => {
+    const el = svgRef.current
+    if (!el) return
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+
+      const rect = el.getBoundingClientRect()
+
+      const cx = e.clientX - rect.left
+      const cy = e.clientY - rect.top
+
+      const delta = -e.deltaY
+      const step = e.ctrlKey ? 0.0015 : 0.0035
+
+      const oldScale = scaleRef.current
+      const currentPan = panRef.current
+
+      const factor = Math.exp(delta * step)
+
+      const target = Math.max(
+        0.2,
+        Math.min(1000, oldScale * factor)
+      )
+
+      const pX = (cx - currentPan.x) / oldScale
+      const pY = (cy - currentPan.y) / oldScale
+
+      const newPanX = cx - pX * target
+      const newPanY = cy - pY * target
+
+      setScale(target)
+      setPan({
+        x: newPanX,
+        y: newPanY,
+      })
+    }
+
+    el.addEventListener('wheel', handleWheel, {
+      passive: false,
+    })
+
+    return () => {
+      el.removeEventListener('wheel', handleWheel)
+    }
+  }, [])
+
   return (
     <svg
       ref={svgRef}
-      onWheel={onWheel}
+      // onWheel={onWheel}
       onMouseMove={onMouseMove}
       onMouseDown={onBackgroundMouseDown}
       onMouseUp={() => {
         onBackgroundMouseUp()
         setDragging(null)
       }}
-      style={{ width: '100%', height: '100%', background: '#f6f6f8', touchAction: 'none' }}
+      style={{ width: '100%', height: '100%', background: '#000000', touchAction: 'none' }}
     >
-      {/* simple grid */}
+      {/* simple grid #000000 */}
       <rect x={0} y={0} width={size.w} height={size.h} fill="transparent" />
       {/* grid overlay: compute lat/lon lines */}
       {renderGrid(latMin, latMax, lonMin, lonMax, size)}
       <g transform={`translate(${pan.x}, ${pan.y}) scale(${scale})`}>
-      {geoPoints.map(p => {
-        const { x, y } = project(p.coord.lat, p.coord.lon)
-        const fill = p.type === 'VOR' ? '#ff8a00' : p.type === 'NDB' ? '#3fbf6f' : '#1976d2'
-        const isSelected = p.id === selectedId
-        return (
-          <g key={p.id}>
-            <circle
-              cx={x}
-              cy={y}
-              r={isSelected ? 10 : 8}
-              fill={fill}
-              stroke={isSelected ? '#ffd54f' : '#fff'}
-              strokeWidth={isSelected ? 3 : 2}
-              onMouseDown={() => startDrag(p.id)}
-              onClick={() => onSelect?.(p.id)}
-              style={{ cursor: 'move' }}
-            />
-          </g>
-        )
-      })}
+        {projectedShapes.map((shape, shapeIndex) => {
+          const paths =
+            shape.kind === 'polygon'
+              ? mergePolygonPaths(shape.paths)
+              : shape.paths
+
+          return (
+            <g key={`shape-${shape.name}-${shapeIndex}`}>
+              {paths.map((path, index) => {
+                const points = path.coords
+                  .map(c => {
+                    const { x, y } = project(c.lat, c.lon)
+                    return `${x},${y}`
+                  })
+                  .filter(p => p.includes(','))
+                
+                const label = path.label || shape.name
+                
+                if (shape.kind === 'polygon' && points.length > 2) {
+                  return (
+                    <g key={`shape-${shape.name}-${index}`}>
+                      <polygon
+                        points={points.join(' ')}
+                        fill={
+                          path.color
+                            ? hexToRgba(path.color, 0.08)
+                            : 'rgba(48, 113, 255, 0.08)'
+                        }
+                        stroke={path.color ?? '#3173ff'}
+                        strokeWidth={1.6 / scale}
+                      />
+
+                      <text
+                        x={
+                          project(
+                            path.coords[0].lat,
+                            path.coords[0].lon
+                          ).x + 4
+                        }
+                        y={
+                          project(
+                            path.coords[0].lat,
+                            path.coords[0].lon
+                          ).y - 4
+                        }
+                        fontSize={12}
+                        fill="#1b3774"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )
+                }
+              
+                if (shape.kind === 'polyline' && points.length > 1) {
+                  return (
+                    <g key={`shape-${shape.name}-${index}`}>
+                      <polyline
+                        points={points.join(' ')}
+                        fill="none"
+                        stroke={path.color ?? '#4c8bff'}
+                        strokeWidth={1.6 / scale}
+                        strokeDasharray={`${6 / scale} ${4 / scale}`}
+                      />
+
+                      {shape.name !== 'GEO' && label && (
+                        <text
+                          x={project(path.coords[0].lat, path.coords[0].lon).x + 4}
+                          y={project(path.coords[0].lat, path.coords[0].lon).y - 4}
+                          fontSize={12}
+                          fill="#1b3774"
+                        >
+                          {label}
+                        </text>
+                      )}
+                    </g>
+                  )
+                }
+              
+                if (shape.kind === 'point' && points.length === 1) {
+                  const [x, y] = points[0].split(',').map(Number)
+                
+                  return (
+                    <g key={`shape-${shape.name}-${index}`}>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={6}
+                        fill={path.color ?? '#4c8bff'}
+                        stroke="#fff"
+                        strokeWidth={2 / scale}
+                      />
+
+                      <text
+                        x={x + 8}
+                        y={y + 4}
+                        fontSize={12}
+                        fill="#1b3774"
+                      >
+                        {label}
+                      </text>
+                    </g>
+                  )
+                }
+              
+                if (shape.kind === 'label' && points.length > 0) {
+                  return (
+                    <text
+                      key={`shape-${shape.name}-${index}`}
+                      x={
+                        project(
+                          path.coords[0].lat,
+                          path.coords[0].lon
+                        ).x
+                      }
+                      y={
+                        project(
+                          path.coords[0].lat,
+                          path.coords[0].lon
+                        ).y
+                      }
+                      fontSize={14}
+                      fill="#3d3d5b"
+                    >
+                      {label}
+                    </text>
+                  )
+                }
+              
+                return null
+              })}
+            </g>
+          )
+        })}
+        {geoPoints.map(p => {
+          const { x, y } = project(p.coord.lat, p.coord.lon)
+          const fill = p.type === 'VOR' ? '#ff8a00' : p.type === 'NDB' ? '#3fbf6f' : '#1976d2'
+          const isSelected = p.id === selectedId
+          return (
+            <g key={p.id}>
+              <circle
+                cx={x}
+                cy={y}
+                r={isSelected ? 10 : 8}
+                fill={fill}
+                stroke={isSelected ? '#ffd54f' : '#fff'}
+                strokeWidth={isSelected ? 3 / scale : 2 / scale}
+                onMouseDown={() => startDrag(p.id)}
+                onClick={() => onSelect?.(p.id)}
+                style={{ cursor: 'move' }}
+              />
+            </g>
+          )
+        })}
       </g>
       {/* labels: render outside scaled group so font remains constant */}
       {geoPoints.map(p => {
@@ -292,4 +616,41 @@ function niceStep(raw: number) {
   else if (base <= 5) step = 5
   else step = 10
   return step * Math.pow(10, exp)
+}
+
+function hexToRgba(hex: string, a = 1) {
+  try {
+    const h = hex.replace(/^#/, '')
+    const r = parseInt(h.slice(0, 2), 16)
+    const g = parseInt(h.slice(2, 4), 16)
+    const b = parseInt(h.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${a})`
+  } catch (e) {
+    return hex
+  }
+}
+
+function getBounds(coords: Coord[]) {
+  if (coords.length === 0) {
+    return {
+      latMin: 0,
+      latMax: 1,
+      lonMin: 0,
+      lonMax: 1,
+    }
+  }
+
+  let latMin = Infinity
+  let latMax = -Infinity
+  let lonMin = Infinity
+  let lonMax = -Infinity
+
+  for (const c of coords) {
+    if (c.lat < latMin) latMin = c.lat
+    if (c.lat > latMax) latMax = c.lat
+    if (c.lon < lonMin) lonMin = c.lon
+    if (c.lon > lonMax) lonMax = c.lon
+  }
+
+  return { latMin, latMax, lonMin, lonMax }
 }

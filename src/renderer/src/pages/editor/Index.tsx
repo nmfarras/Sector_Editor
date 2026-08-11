@@ -3,9 +3,13 @@ import SectorCanvas from '@/components/SectorCanvas'
 import { useRef } from 'react'
 
 type GeoPoint = { id: string; coord: { lat: number; lon: number }; type?: 'FIX' | 'VOR' | 'NDB'; freq?: string }
+type Coord = { lat: number; lon: number }
+type ShapePath = { coords: Coord[]; label?: string; color?: string }
+type SectionShape = { name: string; kind: 'point' | 'polyline' | 'polygon' | 'label'; paths: ShapePath[] }
 
 const SectorEditor = (): JSX.Element => {
   const [geoPoints, setGeoPoints] = useState<GeoPoint[]>([])
+  const [shapes, setShapes] = useState<SectionShape[]>([])
   const [doc, setDoc] = useState<any | null>(null)
   const [filePath, setFilePath] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -31,6 +35,33 @@ const SectorEditor = (): JSX.Element => {
     const vorPoints = vors.map((v: any) => ({ id: v.id, coord: { lat: v.coord.lat, lon: v.coord.lon }, type: 'VOR' as const, freq: v.freq?.toString() }))
     const ndbPoints = ndbs.map((n: any) => ({ id: n.id, coord: { lat: n.coord.lat, lon: n.coord.lon }, type: 'NDB' as const, freq: n.freq?.toString() }))
     setGeoPoints([...fixPoints, ...vorPoints, ...ndbPoints])
+    // build defines map: prefer res.doc.defines but fall back to headerLines if empty
+    let definesMap: Record<string, string> = res.doc.defines || {}
+    if (!definesMap || Object.keys(definesMap).length === 0) {
+      definesMap = {}
+      const header = res.doc.headerLines || []
+      for (const ln of header) {
+        const m = String(ln).match(/^#define\s+([A-Za-z0-9_\-]+)\s+(\S+)/)
+        if (m) definesMap[m[1]] = m[2]
+      }
+      // also scan sections in case defines ended up inside a section
+      for (const s of res.doc.sections || []) {
+        for (const ln of s.lines || []) {
+          const m = String(ln).match(/^#define\s+([A-Za-z0-9_\-]+)\s+(\S+)/)
+          if (m) definesMap[m[1]] = m[2]
+        }
+      }
+    }
+    const parsedShapes = parseSectionShapes(res.doc.sections || [], definesMap)
+    setShapes(parsedShapes)
+    // // try to auto-fit the canvas to the new shapes
+    // setTimeout(() => {
+    //   try {
+    //     canvasRef.current?.fitToExtent()
+    //   } catch (e) {
+    //     // ignore
+    //   }
+    // }, 120)
     setSelectedId(null)
   }
 
@@ -125,6 +156,207 @@ const SectorEditor = (): JSX.Element => {
     return `${hemi}${degStr}.${minStr}.${secStr}`
   }
 
+  function parseDms(token: string): number | null {
+    const match = token.match(/^([NSWE])(\d{1,3})\.(\d{1,2})\.(\d{1,2}\.\d+)$/)
+    if (!match) return null
+    const hemi = match[1]
+    const deg = Number(match[2])
+    const min = Number(match[3])
+    const sec = Number(match[4])
+    const value = deg + min / 60 + sec / 3600
+    return hemi === 'S' || hemi === 'W' ? -value : value
+  }
+
+  function parseCoordsFromLine(line: string): Coord[] {
+    const tokens = line.match(/[NSWE]\d{1,3}\.\d{1,2}\.\d{1,2}\.\d+/g) || []
+    const coords: Coord[] = []
+    for (let i = 0; i + 1 < tokens.length; i += 2) {
+      const lat = parseDms(tokens[i])
+      const lon = parseDms(tokens[i + 1])
+      if (lat === null || lon === null) continue
+      coords.push({ lat, lon })
+    }
+    return coords
+  }
+
+  function extractLabel(line: string): string | undefined {
+    const quoted = line.match(/"([^"]+)"/)
+    if (quoted) return quoted[1]
+    const firstCoord = line.match(/\s+[NSWE]\d{1,3}\.\d{1,2}\.\d{1,2}\.\d+/)
+    if (firstCoord) {
+      const label = line.slice(0, firstCoord.index).trim()
+      return label || undefined
+    }
+    return undefined
+  }
+
+  function extractColorToken(line: string, defines: Record<string, string>): string | undefined {
+    const toks = line.trim().split(/\s+/)
+    for (let i = toks.length - 1; i >= 0; i--) {
+      const t = toks[i]
+      if (defines.hasOwnProperty(t)) return defines[t]
+      const clean = t.replace(/[,;]$/, '')
+      if (defines.hasOwnProperty(clean)) return defines[clean]
+    }
+    return undefined
+  }
+
+  function sectionKind(
+    name: string,
+    paths: ShapePath[]
+  ): 'point' | 'polyline' | 'polygon' | 'label' {
+    const upper = name.toUpperCase()
+  
+    if (upper === 'FREETEXT') return 'label'
+    if (upper === 'POSITIONS' || upper === 'AIRPORT' || upper === 'LABELS') return 'point'
+    if (/^(RUNWAY|GROUND|HIGH AIRWAY|LOW AIRWAY|SID|STAR|SIDSSTARS)$/i.test(upper)) {
+      return 'polyline'
+    }
+  
+    if (upper === 'GEO') {
+      return 'polyline'
+    }
+  
+    if (/^(AIRSPACE|ARTCC HIGH|ARTCC LOW|ARTCC|REGIONS)$/i.test(upper)) {
+      return 'polygon'
+    }
+  
+    if (paths.some(path => path.coords.length > 1)) return 'polyline'
+  
+    return 'point'
+  }
+
+  function simplifyPath(coords: Coord[], maxPoints: number): Coord[] {
+    if (coords.length <= maxPoints) return coords
+    const step = Math.ceil(coords.length / maxPoints)
+    const reduced = coords.filter((_, index) => index % step === 0)
+    if (reduced[reduced.length - 1] !== coords[coords.length - 1]) {
+      reduced.push(coords[coords.length - 1])
+    }
+    return reduced
+  }
+
+  function isContinuationLine(line: string): boolean {
+    return /^\s{2,}/.test(line)
+  }
+
+  function toHexColor(colorVal: string): string | undefined {
+    const str = String(colorVal).trim()
+    if (/^#?[0-9a-fA-F]{6}$/.test(str)) {
+      return str.replace(/^#/, '').toUpperCase()
+    }
+    if (/^0x[0-9a-fA-F]{1,6}$/i.test(str)) {
+      return str.replace(/^0x/i, '').padStart(6, '0').toUpperCase()
+    }
+    if (/^\d+$/.test(str)) {
+      const num = Number(str)
+      if (Number.isFinite(num)) {
+        const b0 = num & 0xff
+        const b1 = (num >> 8) & 0xff
+        const b2 = (num >> 16) & 0xff
+        const rgb = ((b0 << 16) | (b1 << 8) | b2) >>> 0
+        return rgb.toString(16).padStart(6, '0').toUpperCase()
+      }
+    }
+    return undefined
+  }
+
+  function parseSectionShapes(
+    sections: any[],
+    defines: Record<string, string>
+  ): SectionShape[] {
+    return sections
+      .map(section => {
+        if (['VOR', 'NDB', 'FIXES', 'INFO'].includes(section.name)) {
+          return null
+        }
+      
+        const paths: ShapePath[] = []
+        const upperName = section.name.toUpperCase()
+      
+        const segmentBased =
+          upperName === 'GEO' ||
+          upperName === 'GROUND'
+      
+        if (segmentBased) {
+          for (const line of section.lines) {
+            const coords = parseCoordsFromLine(line)
+          
+            if (coords.length < 2) {
+              continue
+            }
+          
+            const colorVal = extractColorToken(line, defines)
+            const colorHex = colorVal
+              ? toHexColor(colorVal)
+              : undefined
+          
+            paths.push({
+              coords,
+              label: extractLabel(line),
+              color: colorHex
+                ? `#${colorHex}`
+                : undefined,
+            })
+          }
+        } else {
+          // existing parser for other sections
+          let currentPath: ShapePath | null = null
+        
+          for (const line of section.lines) {
+            const coords = parseCoordsFromLine(line)
+          
+            if (coords.length === 0) {
+              continue
+            }
+          
+            const colorVal = extractColorToken(line, defines)
+            const colorHex = colorVal
+              ? toHexColor(colorVal)
+              : undefined
+          
+            const label = extractLabel(line)
+          
+            if (!currentPath || !isContinuationLine(line)) {
+              currentPath = {
+                coords,
+                label,
+                color: colorHex
+                  ? `#${colorHex}`
+                  : undefined,
+              }
+            
+              paths.push(currentPath)
+            } else {
+              currentPath.coords.push(...coords)
+            
+              if (!currentPath.color && colorHex) {
+                currentPath.color = `#${colorHex}`
+              }
+            
+              if (!currentPath.label && label) {
+                currentPath.label = label
+              }
+            }
+          }
+        }
+      
+        if (paths.length === 0) {
+          return null
+        }
+      
+        return {
+          name: section.name,
+          kind: sectionKind(section.name, paths),
+          paths,
+        }
+      })
+      .filter(
+        (shape): shape is SectionShape =>
+          shape !== null
+      )
+  }
+
   function formatLonDms(lon: number): string {
     const hemi = lon < 0 ? 'W' : 'E'
     const a = Math.abs(lon)
@@ -149,7 +381,7 @@ const SectorEditor = (): JSX.Element => {
           <span style={{ marginLeft: 12, color: '#cfe8ff' }}>{filePath ?? 'No file'}</span>
         </div>
         <div style={{ flex: 1 }}>
-          <SectorCanvas ref={canvasRef} geoPoints={geoPoints} onGeoChange={setGeoPoints} selectedId={selectedId} onSelect={setSelectedId} />
+          <SectorCanvas ref={canvasRef} geoPoints={geoPoints} shapes={shapes} onGeoChange={setGeoPoints} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
       </div>
       <aside style={{ width: 320, padding: 12, borderLeft: '1px solid #ddd' }}>
