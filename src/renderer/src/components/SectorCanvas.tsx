@@ -13,6 +13,15 @@ type Props = {
   onSelect?: (id: string | null) => void
 }
 
+// type ScreenCoord = {
+//   x: number
+//   y: number
+// }
+
+// type ProjectedShapePath = ShapePath & {
+//   screenCoords: ScreenCoord[]
+// }
+
 export type CanvasHandle = { fitToExtent: () => void; resetView: () => void }
 
 const Margin = 20
@@ -106,6 +115,11 @@ function SectorCanvasInner(
   const [scale, setScale] = useState(1)
   const scaleRef = useRef(scale)
   const panRef = useRef(pan)
+  const zoomFrameRef = useRef<number | null>(null)
+  const pendingZoomRef = useRef<{
+    scale: number
+    pan: { x: number; y: number }
+  } | null>(null)
 
   useEffect(() => {
     scaleRef.current = scale
@@ -137,26 +151,6 @@ function SectorCanvasInner(
     const ny = e.clientY - panStartRef.current.y
     setPan({ x: nx, y: ny })
   }
-
-  // function onWheel(e: React.WheelEvent) {
-  //   e.preventDefault()
-  //   const el = svgRef.current
-  //   if (!el) return
-  //   const rect = el.getBoundingClientRect()
-  //   const cx = e.clientX - rect.left
-  //   const cy = e.clientY - rect.top
-  //   const delta = -e.deltaY
-  //   const step = e.ctrlKey ? 0.0015 : 0.0035
-  //   const oldScale = scale
-  //   const factor = Math.exp(delta * step)
-  //   const target = Math.max(0.2, Math.min(8, oldScale * factor))
-  //   const pX = (cx - pan.x) / oldScale
-  //   const pY = (cy - pan.y) / oldScale
-  //   const newPanX = cx - pX * target
-  //   const newPanY = cy - pY * target
-  //   setScale(target)
-  //   setPan({ x: newPanX, y: newPanY })
-  // }
 
   // animate zoom with easing
   function animateZoom(fromScale: number, toScale: number, fromPan: { x: number; y: number }, toPan: { x: number; y: number }) {
@@ -198,15 +192,22 @@ function SectorCanvasInner(
   } = getBounds(allCoords)
 
   const projectedShapes = useMemo(() => {
-    return shapes.map(shape => ({
-      ...shape,
-      paths: shape.paths.map(path => ({
-        ...path,
-        screenCoords: path.coords.map(c =>
-          project(c.lat, c.lon)
-        ),
-      })),
-    }))
+    return shapes.map(shape => {
+      const paths =
+        shape.kind === 'polygon'
+          ? mergePolygonPaths(shape.paths)
+          : shape.paths
+
+      return {
+        ...shape,
+        paths: paths.map(path => ({
+          ...path,
+          screenCoords: path.coords.map(c =>
+            project(c.lat, c.lon)
+          ),
+        })),
+      }
+    })
   }, [
     shapes,
     size,
@@ -214,7 +215,7 @@ function SectorCanvasInner(
     latMax,
     lonMin,
     lonMax,
-  ])
+    ])
 
   function project(lat: number, lon: number) {
     const w = size.w - Margin * 2
@@ -261,10 +262,10 @@ function SectorCanvasInner(
     return { lat, lon }
   }
 
-  function startDrag(id: string) {
-    setDragging(id)
-    onSelect?.(id)
-  }
+  // function startDrag(id: string) {
+  //   setDragging(id)
+  //   onSelect?.(id)
+  // }
 
   function onMouseMove(e: React.MouseEvent) {
     if (isPanning) {
@@ -288,11 +289,11 @@ function SectorCanvasInner(
     fitToExtent: () => {
       if (!svgRef.current) return
         
-      const el = svgRef.current
-      const r = el.getBoundingClientRect()
+      // const el = svgRef.current
+      // const r = el.getBoundingClientRect()
         
-      const viewW = Math.max(100, r.width)
-      const viewH = Math.max(100, r.height)
+      // const viewW = Math.max(100, r.width)
+      // const viewH = Math.max(100, r.height)
         
       const points = [
         ...geoPoints.map(p => p.coord),
@@ -341,47 +342,72 @@ function SectorCanvasInner(
   useEffect(() => {
     const el = svgRef.current
     if (!el) return
-
+    
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
-
+    
       const rect = el.getBoundingClientRect()
-
+    
       const cx = e.clientX - rect.left
       const cy = e.clientY - rect.top
-
+    
       const delta = -e.deltaY
       const step = e.ctrlKey ? 0.0015 : 0.0035
-
+    
       const oldScale = scaleRef.current
       const currentPan = panRef.current
-
+    
       const factor = Math.exp(delta * step)
-
+    
       const target = Math.max(
         0.2,
-        Math.min(1000, oldScale * factor)
+        Math.min(4000, oldScale * factor)
       )
-
+    
       const pX = (cx - currentPan.x) / oldScale
       const pY = (cy - currentPan.y) / oldScale
-
+    
       const newPanX = cx - pX * target
       const newPanY = cy - pY * target
-
-      setScale(target)
-      setPan({
+    
+      scaleRef.current = target
+      panRef.current = {
         x: newPanX,
         y: newPanY,
+      }
+    
+      pendingZoomRef.current = {
+        scale: target,
+        pan: {
+          x: newPanX,
+          y: newPanY,
+        },
+      }
+    
+      if (zoomFrameRef.current !== null) return
+    
+      zoomFrameRef.current = requestAnimationFrame(() => {
+        zoomFrameRef.current = null
+      
+        const pending = pendingZoomRef.current
+        if (!pending) return
+      
+        setScale(pending.scale)
+        setPan(pending.pan)
       })
     }
-
+  
     el.addEventListener('wheel', handleWheel, {
       passive: false,
     })
-
+  
     return () => {
       el.removeEventListener('wheel', handleWheel)
+    
+      if (zoomFrameRef.current !== null) {
+        cancelAnimationFrame(zoomFrameRef.current)
+        zoomFrameRef.current = null
+      }
     }
   }, [])
 
@@ -400,162 +426,126 @@ function SectorCanvasInner(
       {/* simple grid #000000 */}
       <rect x={0} y={0} width={size.w} height={size.h} fill="transparent" />
       {/* grid overlay: compute lat/lon lines */}
-      {renderGrid(latMin, latMax, lonMin, lonMax, size)}
+      {/* {renderGrid(latMin, latMax, lonMin, lonMax, size)} */}
       <g transform={`translate(${pan.x}, ${pan.y}) scale(${scale})`}>
-        {projectedShapes.map((shape, shapeIndex) => {
-          const paths =
-            shape.kind === 'polygon'
-              ? mergePolygonPaths(shape.paths)
-              : shape.paths
+        {projectedShapes.map((shape, shapeIndex) => (
+          <g key={`shape-${shape.name}-${shapeIndex}`}>
+            {shape.paths.map((path, index) => {
+              const points = path.screenCoords.map(
+                p => `${p.x},${p.y}`
+              )
+            
+              const label = path.label || shape.name
+            
+              if (
+                shape.kind === 'polygon' &&
+                path.screenCoords.length > 2
+              ) {
+                return (
+                  <g key={`shape-${shape.name}-${index}`}>
+                    <polygon
+                      points={points.join(' ')}
+                      fill={
+                        path.color
+                          ? hexToRgba(path.color, 0.08)
+                          : 'rgba(48, 113, 255, 0.08)'
+                      }
+                      stroke={path.color ?? '#3173ff'}
+                      strokeWidth={1.6}
+                      vectorEffect="non-scaling-stroke"
+                    />
 
-          return (
-            <g key={`shape-${shape.name}-${shapeIndex}`}>
-              {paths.map((path, index) => {
-                const points = path.coords
-                  .map(c => {
-                    const { x, y } = project(c.lat, c.lon)
-                    return `${x},${y}`
-                  })
-                  .filter(p => p.includes(','))
-                
-                const label = path.label || shape.name
-                
-                if (shape.kind === 'polygon' && points.length > 2) {
-                  return (
-                    <g key={`shape-${shape.name}-${index}`}>
-                      <polygon
-                        points={points.join(' ')}
-                        fill={
-                          path.color
-                            ? hexToRgba(path.color, 0.08)
-                            : 'rgba(48, 113, 255, 0.08)'
-                        }
-                        stroke={path.color ?? '#3173ff'}
-                        strokeWidth={1.6 / scale}
-                      />
-
-                      <text
-                        x={
-                          project(
-                            path.coords[0].lat,
-                            path.coords[0].lon
-                          ).x + 4
-                        }
-                        y={
-                          project(
-                            path.coords[0].lat,
-                            path.coords[0].lon
-                          ).y - 4
-                        }
-                        fontSize={12}
-                        fill="#1b3774"
-                      >
-                        {label}
-                      </text>
-                    </g>
-                  )
-                }
-              
-                if (shape.kind === 'polyline' && points.length > 1) {
-                  return (
-                    <g key={`shape-${shape.name}-${index}`}>
-                      <polyline
-                        points={points.join(' ')}
-                        fill="none"
-                        stroke={path.color ?? '#4c8bff'}
-                        strokeWidth={1.6 / scale}
-                        strokeDasharray={`${6 / scale} ${4 / scale}`}
-                      />
-
-                      {shape.name !== 'GEO' && label && (
-                        <text
-                          x={project(path.coords[0].lat, path.coords[0].lon).x + 4}
-                          y={project(path.coords[0].lat, path.coords[0].lon).y - 4}
-                          fontSize={12}
-                          fill="#1b3774"
-                        >
-                          {label}
-                        </text>
-                      )}
-                    </g>
-                  )
-                }
-              
-                if (shape.kind === 'point' && points.length === 1) {
-                  const [x, y] = points[0].split(',').map(Number)
-                
-                  return (
-                    <g key={`shape-${shape.name}-${index}`}>
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r={6}
-                        fill={path.color ?? '#4c8bff'}
-                        stroke="#fff"
-                        strokeWidth={2 / scale}
-                      />
-
-                      <text
-                        x={x + 8}
-                        y={y + 4}
-                        fontSize={12}
-                        fill="#1b3774"
-                      >
-                        {label}
-                      </text>
-                    </g>
-                  )
-                }
-              
-                if (shape.kind === 'label' && points.length > 0) {
-                  return (
                     <text
-                      key={`shape-${shape.name}-${index}`}
-                      x={
-                        project(
-                          path.coords[0].lat,
-                          path.coords[0].lon
-                        ).x
-                      }
-                      y={
-                        project(
-                          path.coords[0].lat,
-                          path.coords[0].lon
-                        ).y
-                      }
-                      fontSize={14}
-                      fill="#3d3d5b"
+                      x={path.screenCoords[0].x + 4}
+                      y={path.screenCoords[0].y - 4}
+                      fontSize={12}
+                      fill="#1b3774"
                     >
                       {label}
                     </text>
-                  )
-                }
+                  </g>
+                )
+              }
+            
+              if (
+                shape.kind === 'polyline' &&
+                path.screenCoords.length > 1
+              ) {
+                return (
+                  <g key={`shape-${shape.name}-${index}`}>
+                    <polyline
+                      points={points.join(' ')}
+                      fill="none"
+                      stroke={path.color ?? '#4c8bff'}
+                      strokeWidth={1.6}
+                      vectorEffect="non-scaling-stroke"
+                      // strokeDasharray="6 4"
+                    />
+
+                    {shape.name !== 'GEO' && label && (
+                      <text
+                        x={path.screenCoords[0].x + 4}
+                        y={path.screenCoords[0].y - 4}
+                        fontSize={12}
+                        fill="#1b3774"
+                      >
+                        {label}
+                      </text>
+                    )}
+                  </g>
+                )
+              }
+            
+              if (
+                shape.kind === 'point' &&
+                path.screenCoords.length === 1
+              ) {
+                const { x, y } = path.screenCoords[0]
               
-                return null
-              })}
-            </g>
-          )
-        })}
-        {geoPoints.map(p => {
-          const { x, y } = project(p.coord.lat, p.coord.lon)
-          const fill = p.type === 'VOR' ? '#ff8a00' : p.type === 'NDB' ? '#3fbf6f' : '#1976d2'
-          const isSelected = p.id === selectedId
-          return (
-            <g key={p.id}>
-              <circle
-                cx={x}
-                cy={y}
-                r={isSelected ? 10 : 8}
-                fill={fill}
-                stroke={isSelected ? '#ffd54f' : '#fff'}
-                strokeWidth={isSelected ? 3 / scale : 2 / scale}
-                onMouseDown={() => startDrag(p.id)}
-                onClick={() => onSelect?.(p.id)}
-                style={{ cursor: 'move' }}
-              />
-            </g>
-          )
-        })}
+                return (
+                  <g key={`shape-${shape.name}-${index}`}>
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={6}
+                      fill={path.color ?? '#4c8bff'}
+                      stroke="#fff"
+                      strokeWidth={2 / scale}
+                    />
+
+                    <text
+                      x={x + 8}
+                      y={y + 4}
+                      fontSize={12}
+                      fill="#1b3774"
+                    >
+                      {label}
+                    </text>
+                  </g>
+                )
+              }
+            
+              if (
+                shape.kind === 'label' &&
+                path.screenCoords.length > 0
+              ) {
+                return (
+                  <text
+                    key={`shape-${shape.name}-${index}`}
+                    x={path.screenCoords[0].x}
+                    y={path.screenCoords[0].y}
+                    fontSize={14}
+                    fill="#3d3d5b"
+                  >
+                    {label}
+                  </text>
+                )
+              }
+            
+              return null
+            })}
+          </g>
+        ))}
       </g>
       {/* labels: render outside scaled group so font remains constant */}
       {geoPoints.map(p => {
@@ -576,47 +566,47 @@ const SectorCanvas = forwardRef<CanvasHandle, Props>(SectorCanvasInner)
 
 export default SectorCanvas;
 
-function renderGrid(latMin: number, latMax: number, lonMin: number, lonMax: number, size: { w: number; h: number }) {
-  // choose grid step in degrees
-  const latRange = Math.abs(latMax - latMin) || 1
-  const lonRange = Math.abs(lonMax - lonMin) || 1
-  const approxSteps = 6
-  const latStep = niceStep(latRange / approxSteps)
-  const lonStep = niceStep(lonRange / approxSteps)
+// function renderGrid(latMin: number, latMax: number, lonMin: number, lonMax: number, size: { w: number; h: number }) {
+//   // choose grid step in degrees
+//   const latRange = Math.abs(latMax - latMin) || 1
+//   const lonRange = Math.abs(lonMax - lonMin) || 1
+//   const approxSteps = 6
+//   const latStep = niceStep(latRange / approxSteps)
+//   const lonStep = niceStep(lonRange / approxSteps)
 
-  const lines: React.JSX.Element[] = []
-  for (let lat = Math.floor(latMin / latStep) * latStep; lat <= latMax; lat += latStep) {
-    const y = ((latMax - lat) / (latMax - latMin || 1)) * (size.h - Margin * 2) + Margin
-    lines.push(<line key={`lat-${lat}`} x1={0} y1={y} x2={size.w} y2={y} stroke="#e6eef8" strokeWidth={0.5} />)
-    lines.push(
-      <text key={`lat-t-${lat}`} x={4} y={y - 2} fontSize={10} fill="#7a8ca3">
-        {lat.toFixed(3)}
-      </text>
-    )
-  }
-  for (let lon = Math.floor(lonMin / lonStep) * lonStep; lon <= lonMax; lon += lonStep) {
-    const x = ((lon - lonMin) / (lonMax - lonMin || 1)) * (size.w - Margin * 2) + Margin
-    lines.push(<line key={`lon-${lon}`} x1={x} y1={0} x2={x} y2={size.h} stroke="#e6eef8" strokeWidth={0.5} />)
-    lines.push(
-      <text key={`lon-t-${lon}`} x={x + 2} y={12} fontSize={10} fill="#7a8ca3">
-        {lon.toFixed(3)}
-      </text>
-    )
-  }
-  return <g>{lines}</g>
-}
+//   const lines: React.JSX.Element[] = []
+//   for (let lat = Math.floor(latMin / latStep) * latStep; lat <= latMax; lat += latStep) {
+//     const y = ((latMax - lat) / (latMax - latMin || 1)) * (size.h - Margin * 2) + Margin
+//     lines.push(<line key={`lat-${lat}`} x1={0} y1={y} x2={size.w} y2={y} stroke="#e6eef8" strokeWidth={0.5} />)
+//     lines.push(
+//       <text key={`lat-t-${lat}`} x={4} y={y - 2} fontSize={10} fill="#7a8ca3">
+//         {lat.toFixed(3)}
+//       </text>
+//     )
+//   }
+//   for (let lon = Math.floor(lonMin / lonStep) * lonStep; lon <= lonMax; lon += lonStep) {
+//     const x = ((lon - lonMin) / (lonMax - lonMin || 1)) * (size.w - Margin * 2) + Margin
+//     lines.push(<line key={`lon-${lon}`} x1={x} y1={0} x2={x} y2={size.h} stroke="#e6eef8" strokeWidth={0.5} />)
+//     lines.push(
+//       <text key={`lon-t-${lon}`} x={x + 2} y={12} fontSize={10} fill="#7a8ca3">
+//         {lon.toFixed(3)}
+//       </text>
+//     )
+//   }
+//   return <g>{lines}</g>
+// }
 
-function niceStep(raw: number) {
-  // round to 1,2,5 * 10^n
-  const exp = Math.floor(Math.log10(raw || 1))
-  const base = raw / Math.pow(10, exp)
-  let step = 1
-  if (base <= 1) step = 1
-  else if (base <= 2) step = 2
-  else if (base <= 5) step = 5
-  else step = 10
-  return step * Math.pow(10, exp)
-}
+// function niceStep(raw: number) {
+//   // round to 1,2,5 * 10^n
+//   const exp = Math.floor(Math.log10(raw || 1))
+//   const base = raw / Math.pow(10, exp)
+//   let step = 1
+//   if (base <= 1) step = 1
+//   else if (base <= 2) step = 2
+//   else if (base <= 5) step = 5
+//   else step = 10
+//   return step * Math.pow(10, exp)
+// }
 
 function hexToRgba(hex: string, a = 1) {
   try {

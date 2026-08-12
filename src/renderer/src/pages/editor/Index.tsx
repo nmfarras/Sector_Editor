@@ -226,15 +226,15 @@ const SectorEditor = (): JSX.Element => {
     return 'point'
   }
 
-  function simplifyPath(coords: Coord[], maxPoints: number): Coord[] {
-    if (coords.length <= maxPoints) return coords
-    const step = Math.ceil(coords.length / maxPoints)
-    const reduced = coords.filter((_, index) => index % step === 0)
-    if (reduced[reduced.length - 1] !== coords[coords.length - 1]) {
-      reduced.push(coords[coords.length - 1])
-    }
-    return reduced
-  }
+  // function simplifyPath(coords: Coord[], maxPoints: number): Coord[] {
+  //   if (coords.length <= maxPoints) return coords
+  //   const step = Math.ceil(coords.length / maxPoints)
+  //   const reduced = coords.filter((_, index) => index % step === 0)
+  //   if (reduced[reduced.length - 1] !== coords[coords.length - 1]) {
+  //     reduced.push(coords[coords.length - 1])
+  //   }
+  //   return reduced
+  // }
 
   function isContinuationLine(line: string): boolean {
     return /^\s{2,}/.test(line)
